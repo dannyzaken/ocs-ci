@@ -457,17 +457,33 @@ class MCGNamespaceBucket(ObjectBucket):
         super().__init__(*args, **kwargs)
         self.read_ns_resources = kwargs.get("read_ns_resources")
         self.write_ns_resource = kwargs.get("write_ns_resource")
-        self.mcg.send_rpc_query(
-            "bucket_api",
-            "create_bucket",
-            {
-                "name": self.name,
-                "namespace": {
-                    "write_resource": self.write_ns_resource,
-                    "read_resources": self.read_ns_resources,
+        self.cache_ttl_ms = kwargs.get("cache_ttl_ms", None)
+        if self.cache_ttl_ms is None:
+            self.mcg.send_rpc_query(
+                "bucket_api",
+                "create_bucket",
+                {
+                    "name": self.name,
+                    "namespace": {
+                        "write_resource": self.write_ns_resource,
+                        "read_resources": self.read_ns_resources,
+                    },
                 },
-            },
-        )
+            )
+
+        else:
+            self.mcg.send_rpc_query(
+                "bucket_api",
+                "create_bucket",
+                {
+                    "name": self.name,
+                    "namespace": {
+                        "write_resource": self.write_ns_resource,
+                        "read_resources": self.read_ns_resources,
+                        "caching": {"ttl_ms": self.cache_ttl_ms},
+                    },
+                },
+            )
 
     def internal_delete(self):
         """
@@ -525,10 +541,25 @@ class MCGNamespaceBucket(ObjectBucket):
         return len(match_buckets) == 0
 
 
+class MCGCacheBucket(MCGNamespaceBucket):
+    """
+    Implementation of an MCG cache bucket using the S3 API
+    """
+
+    def __init__(self, *args, **kwargs):
+        hub_resource = kwargs.get("hub_resource")
+        ttl_ms = kwargs.get("ttl_ms", 60000)
+        kwargs["read_ns_resources"] = [hub_resource]
+        kwargs["write_ns_resource"] = hub_resource
+        kwargs["cache_ttl_ms"] = ttl_ms
+        super().__init__(*args, **kwargs)
+
+
 BUCKET_MAP = {
     "s3": MCGS3Bucket,
     "oc": MCGOCBucket,
     "cli": MCGCLIBucket,
     "rgw-oc": RGWOCBucket,
     "mcg-namespace": MCGNamespaceBucket,
+    "mcg-cache": MCGCacheBucket,
 }
